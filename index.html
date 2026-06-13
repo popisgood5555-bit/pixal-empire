@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>像素帝國：工業與戰火</title>
+    <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg: #0f172a; --panel: #1e293b; --accent: #3b82f6; --text: #f8fafc; }
+        * { box-sizing: border-box; user-select: none; font-family: 'DotGothic16', sans-serif; touch-action: manipulation; }
+        body { margin: 0; background-color: var(--bg); color: var(--text); overflow: hidden; display: flex; }
+        
+        #game-container { position: relative; width: calc(100vw - 350px); height: 100vh; background-color: #1c1917; }
+        canvas { display: block; image-rendering: pixelated; position: relative; z-index: 2; }
+        
+        #warning-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; box-shadow: inset 0 0 50px rgba(239, 68, 68, 0); pointer-events: none; transition: 0.5s; z-index: 3; }
+        .danger { box-shadow: inset 0 0 100px rgba(239, 68, 68, 0.6) !important; }
+
+        #topbar {
+            position: absolute; top: 10px; left: 10px; right: 10px;
+            background: rgba(15, 23, 42, 0.85); border: 2px solid #334155;
+            border-radius: 8px; padding: 10px;
+            display: flex; gap: 15px; align-items: center; z-index: 100; flex-wrap: wrap;
+        }
+        .money { color: #f59e0b; font-size: 20px; font-weight: bold; }
+        .power-meter { color: #fbbf24; font-size: 16px; background: #334155; padding: 4px 8px; border-radius: 4px; }
+        .res-pill { background: #1e293b; padding: 4px 8px; border-radius: 4px; font-size: 14px; border: 1px solid #475569; display: flex; gap: 6px; }
+        .rate-pos { color: #10b981; font-size: 12px; }
+        .rate-neg { color: #ef4444; font-size: 12px; }
+        .rate-zero { color: #64748b; font-size: 12px; }
+
+        #buildbar {
+            position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.9); border: 2px solid #334155; border-radius: 8px;
+            padding: 10px; display: flex; gap: 5px; z-index: 100; overflow-x: auto; max-width: 90vw;
+        }
+        .build-btn {
+            background: #1e293b; border: 2px solid #475569; border-radius: 6px;
+            padding: 8px; cursor: pointer; color: white; transition: 0.2s; text-align: center; min-width: 60px;
+        }
+        .build-btn:hover { border-color: var(--accent); }
+        .build-btn.selected { border-color: #f59e0b; background: #334155; box-shadow: 0 0 10px rgba(245,158,11,0.5); }
+        .build-btn.locked { display: none; }
+
+        #sidebar { width: 350px; background-color: var(--panel); border-left: 4px solid #334155; height: 100vh; display: flex; flex-direction: column; z-index: 10; }
+        .tabs { display: flex; border-bottom: 2px solid #334155; }
+        .tab { flex: 1; padding: 15px; text-align: center; cursor: pointer; background: #0f172a; }
+        .tab.active { background: var(--panel); color: var(--accent); font-weight: bold; }
+        .panel-content { padding: 20px; overflow-y: auto; flex-grow: 1; display: none; }
+        .panel-content.active { display: block; }
+
+        .card { background: #0f172a; border: 2px solid #334155; padding: 15px; margin-bottom: 15px; border-radius: 6px; }
+        button { background: var(--accent); color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; margin-top: 10px; width: 100%; font-size: 16px; }
+        button:disabled { background: #475569; cursor: not-allowed; }
+        .btn-sell { background: #ea580c; }
+        .btn-info { background: #10b981; width: auto; margin-top: 0; padding: 4px 10px; z-index: 200; }
+
+        #factory-ui {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: #1e293b; border: 2px solid #3b82f6; padding: 20px; border-radius: 8px;
+            z-index: 999; display: none; box-shadow: 0 0 20px rgba(0,0,0,0.8); min-width: 300px;
+        }
+        .recipe-btn { background: #0f172a; border: 1px solid #475569; padding: 10px; margin-top: 10px; cursor: pointer; border-radius: 4px; color: white; display:flex; justify-content: space-between; }
+        .recipe-btn:hover { border-color: #3b82f6; }
+        
+        #toast { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); background: rgba(59, 130, 246, 0.95); padding: 10px 20px; border-radius: 20px; z-index: 1000; display: none; font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+
+        /* 新手教學 UI */
+        #tutorial-modal {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.8); z-index: 2000; display: flex;
+            justify-content: center; align-items: center; backdrop-filter: blur(4px);
+        }
+        .tutorial-box {
+            background: #1e293b; border: 3px solid #3b82f6; border-radius: 12px;
+            padding: 30px; max-width: 500px; width: 90%; box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
+            text-align: center;
+        }
+        .tutorial-box h2 { margin-top: 0; color: #fbbf24; font-size: 24px; }
+        .tutorial-box p { font-size: 16px; line-height: 1.6; color: #e2e8f0; text-align: left; margin-bottom: 20px; }
+        .tutorial-nav { display: flex; justify-content: space-between; gap: 10px; }
+        .tutorial-nav button { width: auto; flex: 1; margin: 0; }
+        .tut-img { font-size: 48px; margin: 10px 0; }
+        .tut-highlight { color: #10b981; font-weight: bold; }
+        .tut-danger { color: #ef4444; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="tutorial-modal" style="display: none;">
+        <div class="tutorial
