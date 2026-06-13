@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>像素帝國：工業與戰火</title>
+    <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg: #0f172a; --panel: #1e293b; --accent: #3b82f6; --text: #f8fafc; }
+        * { box-sizing: border-box; user-select: none; font-family: 'DotGothic16', sans-serif; }
+        body { margin: 0; background-color: var(--bg); color: var(--text); overflow: hidden; display: flex; }
+        
+        #game-container { position: relative; width: calc(100vw - 350px); height: 100vh; background-color: #1c1917; }
+        canvas { display: block; image-rendering: pixelated; position: relative; z-index: 2; }
+        
+        #warning-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; box-shadow: inset 0 0 50px rgba(239, 68, 68, 0); pointer-events: none; transition: 0.5s; z-index: 3; }
+        .danger { box-shadow: inset 0 0 100px rgba(239, 68, 68, 0.6) !important; }
+
+        #topbar {
+            position: absolute; top: 10px; left: 10px; right: 10px;
+            background: rgba(15, 23, 42, 0.85); border: 2px solid #334155;
+            border-radius: 8px; padding: 10px;
+            display: flex; gap: 15px; align-items: center; z-index: 10; flex-wrap: wrap;
+        }
+        .money { color: #f59e0b; font-size: 20px; font-weight: bold; }
+        .power-meter { color: #fbbf24; font-size: 16px; background: #334155; padding: 4px 8px; border-radius: 4px; }
+        .res-pill { background: #1e293b; padding: 4px 8px; border-radius: 4px; font-size: 14px; border: 1px solid #475569; display: flex; gap: 6px; }
+        .rate-pos { color: #10b981; font-size: 12px; }
+        .rate-neg { color: #ef4444; font-size: 12px; }
+        .rate-zero { color: #64748b; font-size: 12px; }
+
+        #buildbar {
+            position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.9); border: 2px solid #334155; border-radius: 8px;
+            padding: 10px; display: flex; gap: 5px; z-index: 10; overflow-x: auto; max-width: 90vw;
+        }
+        .build-btn {
+            background: #1e293b; border: 2px solid #475569; border-radius: 6px;
+            padding: 8px; cursor: pointer; color: white; transition: 0.2s; text-align: center; min-width: 60px;
+        }
+        .build-btn:hover { border-color: var(--accent); }
+        .build-btn.selected { border-color: #f59e0b; background: #334155; box-shadow: 0 0 10px rgba(245,158,11,0.5); }
+        .build-btn.locked { display: none; }
+
+        #sidebar { width: 350px; background-color: var(--panel); border-left: 4px solid #334155; height: 100vh; display: flex; flex-direction: column; z-index: 10; }
+        .tabs { display: flex; border-bottom: 2px solid #334155; }
+        .tab { flex: 1; padding: 15px; text-align: center; cursor: pointer; background: #0f172a; }
+        .tab.active { background: var(--panel); color: var(--accent); font-weight: bold; }
+        .panel-content { padding: 20px; overflow-y: auto; flex-grow: 1; display: none; }
+        .panel-content.active { display: block; }
+
+        .card { background: #0f172a; border: 2px solid #334155; padding: 15px; margin-bottom: 15px; border-radius: 6px; }
+        button { background: var(--accent); color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; margin-top: 10px; width: 100%; font-size: 16px; }
+        button:disabled { background: #475569; cursor: not-allowed; }
+        .btn-sell { background: #ea580c; }
+        .btn-info { background: #10b981; width: auto; margin-top: 0; padding: 4px 10px; }
+
+        #factory-ui {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: #1e293b; border: 2px solid #3b82f6; padding: 20px; border-radius: 8px;
+            z-index: 100; display: none; box-shadow: 0 0 20px rgba(0,0,0,0.8); min-width: 300px;
+        }
+        .recipe-btn { background: #0f172a; border: 1px solid #475569; padding: 10px; margin-top: 10px; cursor: pointer; border-radius: 4px; color: white; display:flex; justify-content: space-between; }
+        .recipe-btn:hover { border-color: #3b82f6; }
+        
+        #toast { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); background: rgba(59, 130, 246, 0.9); padding: 10px 20px; border-radius: 20px; z-index: 50; display: none; }
+
+        /* 新手教學 UI */
+        #tutorial-modal {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.8); z-index: 1000; display: flex;
+            justify-content: center; align-items: center; backdrop-filter: blur(4px);
+        }
+        .tutorial-box {
+            background: #1e293b; border: 3px solid #3b82f6; border-radius: 12px;
+            padding: 30px; max-width: 500px; width: 90%; box-shadow: 0 0 30px rgba(59, 130, 246, 0.5);
+            text-align: center;
+        }
+        .tutorial-box h2 { margin-top: 0; color: #fbbf24; font-size: 24px; }
+        .tutorial-box p { font-size: 16px; line-height: 1.6; color: #e2e8f0; text-align: left; margin-bottom: 20px; }
+        .tutorial-nav { display: flex; justify-content: space-between; gap: 10px; }
+        .tutorial-nav button { width: auto; flex: 1; margin: 0; }
+        .tut-img { font-size: 48px; margin: 10px 0; }
+        .tut-highlight { color: #10b981; font-weight: bold; }
+        .tut-danger { color: #ef4444; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="tutorial-modal" style="display: none;">
+        <div class="tutorial-box">
+            <div id="tut-icon" class="tut-img">🚀</div>
+            <h2 id="tut-title">歡迎來到像素帝國</h2>
+            <p id="tut-text">教學內容載入中...</p>
+            <div style="font-size: 14px; color: #64748b; margin-bottom: 15px;" id="tut-progress">1 / 6</div>
+            <div class="tutorial-nav">
+                <button id="btn-tut-prev" onclick="changeTutorial(-1)" style="background: #475569;">上一頁</button>
+                <button id="btn-tut-next" onclick="changeTutorial(1)" style="background: #3b82f6;">下一頁</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast">提示訊息</div>
+
+    <div id="factory-ui">
+        <h3 style="margin-top:0; color:#3b82f6;">設定兵工廠配方</h3>
+        <p id="factory-status" style="font-size:12px; color:#fbbf24;"></p>
+        <div id="recipe-list" style="max-height: 400px; overflow-y: auto;"></div>
+        <button onclick="closeFactoryUI()" style="background:#ef4444; margin-top:15px;">關閉</button>
+    </div>
+
+    <div id="game-container">
+        <div id="warning-overlay"></div>
+        <div id="topbar">
+            <button class="btn-info" onclick="openTutorial()">ℹ️ 教學</button>
+            <div class="money">資金: $<span id="ui-money">0</span></div>
+            <div class="power-meter">⚡ <span id="ui-power">0 / 0</span></div>
+            <div id="ui-inventory" style="display:flex; gap:10px; flex-wrap:wrap;"></div>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+        <div id="buildbar"></div>
+    </div>
+
+    <div id="sidebar">
+        <div class="tabs">
+            <div class="tab active" onclick="switchPanel('market', this)">🛒 市場交易</div>
+            <div class="tab" onclick="switchPanel('tech', this)">🔬 科技樹</div>
+        </div>
+        <div id="panel-market" class="panel-content active"></div>
+        <div id="panel-tech" class="panel-content"></div>
+    </div>
+
+    <script>
+        // === 教學系統邏輯 ===
+        const tutorials = [
+            { icon: "🧑‍🚀", title: "1. 歡迎來到像素帝國", text: "你的目標是建立強大的工業防線，抵禦外星蟲群的攻擊並生存下去。<br><br>👉 使用鍵盤的 <span class='tut-highlight'>W, A, S, D</span> 或 <span class='tut-highlight'>方向鍵</span> 移動你的角色。<br>👉 點擊下方選單可以選擇想要建造的建築。" },
+            { icon: "🌾", title: "2. 資源採集與市場", text: "所有發展都需要資金。<br><br>👉 在空地上建造 <span class='tut-highlight'>農田</span> 或 <span class='tut-highlight'>礦場</span>。<br>👉 它們每秒會自動產出資源。<br>👉 點擊右側的 <span class='tut-highlight'>🛒 市場交易</span> 面板，將生產的資源出售換取「資金($)」來進行下一步建設。" },
+            { icon: "⚡", title: "3. 核心：建立電力網", text: "進階建築需要電力才能運作。<br><br>👉 建造 <span class='tut-highlight'>太陽能發電站</span> 產生電力。<br>👉 選擇下方的 <span class='tut-highlight'>➕ 電線</span> 工具。<br>👉 將電線從發電站 <span class='tut-highlight'>連接</span> 到需要用電的建築旁邊（上下左右相鄰即可通電）。" },
+            { icon: "🏭", title: "4. 工廠自動化", text: "兵工廠可以將基礎礦物加工成彈藥與零件。<br><br>👉 研發科技並建造 <span class='tut-highlight'>自動化工廠</span>，並用電線接通電力。<br>👉 選擇下方第一個 <span class='tut-highlight
