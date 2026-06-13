@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>像素帝國：工業與戰火</title>
+    <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg: #0f172a; --panel: #1e293b; --accent: #3b82f6; --text: #f8fafc; }
+        * { box-sizing: border-box; user-select: none; font-family: 'DotGothic16', sans-serif; }
+        body { margin: 0; background-color: var(--bg); color: var(--text); overflow: hidden; display: flex; }
+        
+        #game-container { position: relative; width: calc(100vw - 350px); height: 100vh; background-color: #1c1917; }
+        canvas { display: block; image-rendering: pixelated; position: relative; z-index: 2; }
+        
+        #warning-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; box-shadow: inset 0 0 50px rgba(239, 68, 68, 0); pointer-events: none; transition: 0.5s; z-index: 3; }
+        .danger { box-shadow: inset 0 0 100px rgba(239, 68, 68, 0.6) !important; }
+
+        #topbar {
+            position: absolute; top: 10px; left: 10px; right: 10px;
+            background: rgba(15, 23, 42, 0.85); border: 2px solid #334155;
+            border-radius: 8px; padding: 10px;
+            display: flex; gap: 15px; align-items: center; z-index: 10; flex-wrap: wrap;
+        }
+        .money { color: #f59e0b; font-size: 20px; font-weight: bold; }
+        .power-meter { color: #fbbf24; font-size: 16px; background: #334155; padding: 4px 8px; border-radius: 4px; }
+        .res-pill { background: #1e293b; padding: 4px 8px; border-radius: 4px; font-size: 14px; border: 1px solid #475569; display: flex; gap: 6px; }
+        .rate-pos { color: #10b981; font-size: 12px; }
+        .rate-neg { color: #ef4444; font-size: 12px; }
+        .rate-zero { color: #64748b; font-size: 12px; }
+
+        #buildbar {
+            position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.9); border: 2px solid #334155; border-radius: 8px;
+            padding: 10px; display: flex; gap: 5px; z-index: 10; overflow-x: auto; max-width: 90vw;
+        }
+        .build-btn {
+            background: #1e293b; border: 2px solid #475569; border-radius: 6px;
+            padding: 8px; cursor: pointer; color: white; transition: 0.2s; text-align: center; min-width: 60px;
+        }
+        .build-btn:hover { border-color: var(--accent); }
+        .build-btn.selected { border-color: #f59e0b; background: #334155; box-shadow: 0 0 10px rgba(245,158,11,0.5); }
+        .build-btn.locked { display: none; }
+
+        #sidebar { width: 350px; background-color: var(--panel); border-left: 4px solid #334155; height: 100vh; display: flex; flex-direction: column; z-index: 10; }
+        .tabs { display: flex; border-bottom: 2px solid #334155; }
+        .tab { flex: 1; padding: 15px; text-align: center; cursor: pointer; background: #0f172a; }
+        .tab.active { background: var(--panel); color: var(--accent); font-weight: bold; }
+        .panel-content { padding: 20px; overflow-y: auto; flex-grow: 1; display: none; }
+        .panel-content.active { display: block; }
+
+        .card { background: #0f172a; border: 2px solid #334155; padding: 15px; margin-bottom: 15px; border-radius: 6px; }
+        button { background: var(--accent); color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; margin-top: 10px; width: 100%; font-size: 16px; }
+        button:disabled { background: #475569; cursor: not-allowed; }
+        .btn-sell { background: #ea580c; }
+
+        #factory-ui {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: #1e293b; border: 2px solid #3b82f6; padding: 20px; border-radius: 8px;
+            z-index: 100; display: none; box-shadow: 0 0 20px rgba(0,0,0,0.8); min-width: 300px;
+        }
+        .recipe-btn { background: #0f172a; border: 1px solid #475569; padding: 10px; margin-top: 10px; cursor: pointer; border-radius: 4px; color: white; display:flex; justify-content: space-between; }
+        .recipe-btn:hover { border-color: #3b82f6; }
+        
+        #toast { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); background: rgba(59, 130, 246, 0.9); padding: 10px 20px; border-radius: 20px; z-index: 50; display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="toast">提示訊息</div>
+
+    <div id="factory-ui">
+        <h3 style="margin-top:0; color:#3b82f6;">設定兵工廠配方</h3>
+        <p id="factory-status" style="font-size:12px; color:#fbbf24;"></p>
+        <div id="recipe-list" style="max-height: 400px; overflow-y: auto;"></div>
+        <button onclick="closeFactoryUI()" style="background:#ef4444; margin-top:15px;">關閉</button>
+    </div>
+
+    <div id="game-container">
+        <div id="warning-overlay"></div>
+        <div id="topbar">
+            <div class="money">資金: $<span id="ui-money">0</span></div>
+            <div class="power-meter">⚡ <span id="ui-power">0 / 0</span></div>
+            <div id="ui-inventory" style="display:flex; gap:10px; flex-wrap:wrap;"></div>
+        </div>
+        <canvas id="gameCanvas"></canvas>
+        <div id="buildbar"></div>
+    </div>
+
+    <div id="sidebar">
+        <div class="tabs">
+            <div class="tab active" onclick="switchPanel('market', this)">🛒 市場交易</div>
+            <div class="tab" onclick="switchPanel('tech', this)">🔬 科技樹</div>
+        </div>
+        <div id="panel-market" class="panel-content active"></div>
+        <div id="panel-tech" class="panel-content"></div>
+    </div>
+
+    <script>
+        // === 資源與配方統合 ===
+        const RES = {
+            food: { icon: '🌾', name: '糧食', price: 2 }, 
+            iron: { icon: '🪨', name: '鐵礦', price: 5 }, 
+            copper: { icon: '🟠', name: '銅礦', price: 8 }, 
+            gear: { icon: '⚙️', name: '齒輪', price: 25 },
+            wire_res: { icon: '🔌', name: '銅線', price: 40 }, 
+            ammo: { icon: '🪙', name: '銅尖彈', price: 15 }, 
+            shell: { icon: '🧨', name: '高爆彈', price: 50 },
+            armor: { icon: '🛡️', name: '裝甲板', price: 80 },
+            hydrogen: { icon: '💨', name: '氫氣', price: 100 },
+            circuit: { icon: '📟', name: '電路板', price: 200 }
+        };
+
+        const RECIPES = {
+            gear: { name: '製造齒輪', in: { iron: 2 }, out: { gear: 1 } },
+            wire_res: { name: '製造銅線', in: { copper: 2 }, out: { wire_res: 1 } },
+            ammo: { name: '生產銅尖彈', in: { copper: 1 }, out: { ammo: 2 } },
+            shell: { name: '生產高爆彈', in: { iron: 2, copper: 1 }, out: { shell: 1 } },
+            armor: { name: '鍛造裝甲板', in: { iron: 3 }, out: { armor: 1 } },
+            hydrogen: { name: '電解氫氣', in: { copper: 1 }, out: { hydrogen: 1 } },
+            circuit: { name: '組裝電路板', in: { gear: 1, wire_res: 2 }, out: { circuit: 1 } }
+        };
+
+        // === 建築與塔防設施 ===
+        const BUILDINGS = {
+            interact: { id: 'interact', icon: '🤚', name: '互動/資訊', cost: 0, type: 'tool' },
+            wire: { id: 'wire', icon: '➕', name: '電線', cost: 2, type: 'wire' },
+            farm: { id: 'farm', icon: '⛺', name: '農田', cost: 15, req: null, type: 'prod', out: 'food', outAmt: 1, drain: 0, hp: 30 },
+            mine_i: { id: 'mine_i', icon: '⛏️', name: '鐵礦井', cost: 100, req: 'mining', type: 'prod', out: 'iron', outAmt: 1, drain: 0, hp: 50 },
+            mine_c: { id: 'mine_c', icon: '🏗️', name: '銅礦場', cost: 200, req: 'mining', type: 'prod', out: 'copper', outAmt: 1, drain: 0, hp: 50 },
+            solar: { id: 'solar', icon: '☀️', name: '太陽能', cost: 300, req: 'electricity', type: 'gen', power: 30, hp: 50 },
+            factory: { id: 'factory', icon: '🏭', name: '自動化工廠', cost: 800, req: 'machinery', type: 'factory', drain: 10, hp: 100 },
+            turret_mg: { id: 'turret_mg', icon: '🔫', name: '機槍塔', cost: 400, req: 'defense1', type: 'turret', range: 150, dmg: 10, cd: 30, drain: 5, hp: 200, ammoType: 'ammo' },
+            turret_aa: { id: 'turret_aa', icon: '🚀', name: '防空砲', cost: 1200, req: 'defense2', type: 'turret', range: 250, dmg: 40, cd: 90, drain: 15, hp: 300, ammoType: 'shell' },
+            tank: { id: 'tank', icon: '🚜', name: '裝甲堡壘', cost: 3000, req: 'armor_tech', type: 'turret', range: 200, dmg: 100, cd: 120, drain: 0, hp: 1000, ammoType: 'shell' },
+            hydro_gen: { id: 'hydro_gen', icon: '🔥', name: '氫氣電廠', cost: 2500, req: 'hydrogen_tech', type: 'gen', power: 150, hp: 200 },
+            fusion: { id: 'fusion', icon: '⚛️', name: '核融合', cost: 15000, req: 'fusion_tech', type: 'gen', power: 1000, hp: 1000 }
+        };
+
+        const TECHS = [
+            { id: 'mining', name: '基礎採礦', desc: '解鎖鐵與銅礦開採。', cost: 50, req: null },
+            { id: 'electricity', name: '基礎電網', desc: '解鎖電線與太陽能發電。', cost: 300, req: 'mining' },
+            { id: 'machinery', name: '自動化工廠', desc: '解鎖萬能兵工廠，需供電。', cost: 1000, req: 'electricity' },
+            { id: 'defense1', name: '基礎火器', desc: '解鎖機槍塔(耗電5)。需工廠生產銅尖彈。', cost: 1500, req: 'machinery' },
+            { id: 'defense2', name: '重型火炮', desc: '解鎖防空砲。需工廠生產高爆彈。', cost: 3000, req: 'defense1' },
+            { id: 'armor_tech', name: '履帶與裝甲', desc: '解鎖定點坦克堡壘(免耗電)。', cost: 6000, req: 'defense2' },
+            { id: 'hydrogen_tech', name: '氫能源科技', desc: '解鎖氫氣配方與氫氣發電廠。', cost: 3000, req: 'machinery' },
+            { id: 'fusion_tech', name: '冷核融合', desc: '終極能源！解鎖核融合反應爐。', cost: 20000, req: 'hydrogen_tech' }
+        ];
+
+        // === 系統狀態 ===
+        let P = {
+            money: 200, hp: 100, 
+            res: { food:0, iron:0, copper:0, gear:0, wire_res:0, ammo:30, shell:0, armor:0, hydrogen:0, circuit:0 },
+            tech: {}, map: {}, px: 15, py: 10
+        };
+        let lastRes = JSON.parse(JSON.stringify(P.res));
+        let rates = {};
+
+        // 戰鬥實體與電力網
+        let enemies = [];
+        let bullets = [];
+        let frameCount = 0;
+        let gridPowerGen = 0, gridPowerUse = 0;
+        let poweredTiles = new Set();
+        
+        const TILE_SIZE = 40;
+        let selectedTool = 'farm';
+        let keys = {};
+        let currentEditingTile = null;
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let cols = 0, rows = 0;
+
+        function resize() {
+            canvas.width = document.getElementById('game-container').clientWidth;
+            canvas.height = document.getElementById('game-container').clientHeight;
+            cols = Math.floor(canvas.width / TILE_SIZE); rows = Math.floor(canvas.height / TILE_SIZE);
+        }
+        window.addEventListener('resize', resize); resize();
+
+        // 啟動
+        if(localStorage.getItem('sandbox_merged_v1')) { P = JSON.parse(localStorage.getItem('sandbox_merged_v1')); }
+        // 補齊可能缺失的新資源欄位
+        for(let r in RES) if(P.res[r] === undefined) P.res[r] = 0;
+
+        updateBuildBar(); renderSidebar();
+        gameLoop();
+        setInterval(gameTick, 1000);
+        setInterval(spawnEnemy, 6000); // 蟲群來襲
+
+        // === 輸入 ===
+        window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+        window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+        
+        let moveTimer = 0;
+        function handleMovement() {
+            if (Date.now() - moveTimer < 100) return;
+            let moved = false;
+            if (keys['w'] || keys['arrowup']) { P.py--; moved=true; }
+            if (keys['s'] || keys['arrowdown']) { P.py++; moved=true; }
+            if (keys['a'] || keys['arrowleft']) { P.px--; moved=true; }
+            if (keys['d'] || keys['arrowright']) { P.px++; moved=true; }
+            if (moved) {
+                if(P.px < 0) P.px = 0; if(P.py < 0) P.py = 0;
+                if(P.px >= cols) P.px = cols-1; if(P.py >= rows) P.py = rows-1;
+                moveTimer = Date.now();
+            }
+        }
+
+        canvas.addEventListener('mousedown', e => {
+            const rect = canvas.getBoundingClientRect();
+            const gridX = Math.floor((e.clientX - rect.left) / TILE_SIZE);
+            const gridY = Math.floor((e.clientY - rect.top) / TILE_SIZE);
+            const key = `${gridX},${gridY}`;
+            
+            if (selectedTool === 'interact') {
+                if (P.map[key] && P.map[key].id === 'factory') openFactoryUI(key);
+                else if (P.map[key]) showToast(`[資訊] ${BUILDINGS[P.map[key].id].name} (HP: ${P.map[key].hp})`);
+                return;
+            }
+
+            if (Math.abs(gridX - P.px) + Math.abs(gridY - P.py) > 4) { showToast("❌ 距離太遠！"); return; }
+            if (gridX === P.px && gridY === P.py && selectedTool !== 'wire') { showToast("❌ 空間被佔用"); return; }
+            if (P.map[key]) return;
+
+            let bData = BUILDINGS[selectedTool];
+            if (P.money >= bData.cost) {
+                P.money -= bData.cost;
+                P.map[key] = { id: selectedTool, recipe: null, hp: bData.hp || 100, lastFire: 0 };
+                updatePowerGrid(); updateUI();
+            } else showToast("❌ 資金不足！");
+        });
+
+        // === 電力與生產迴圈 ===
+        function updatePowerGrid() {
+            gridPowerGen = 0; gridPowerUse = 0; poweredTiles.clear();
+            let queue = [];
+            for (let k in P.map) {
+                if (BUILDINGS[P.map[k].id].type === 'gen') { gridPowerGen += BUILDINGS[P.map[k].id].power; queue.push(k); poweredTiles.add(k); }
+            }
+            const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+            while(queue.length > 0) {
+                let [cx, cy] = queue.shift().split(',').map(Number);
+                for(let d of dirs) {
+                    let nk = `${cx+d[0]},${cy+d[1]}`;
+                    if(P.map[nk] && !poweredTiles.has(nk)) {
+                        let nb = BUILDINGS[P.map[nk].id];
+                        // 電線傳導，工廠與防禦塔吸收電力
+                        if (nb.type === 'wire' || nb.type === 'factory' || nb.type === 'turret') {
+                            poweredTiles.add(nk);
+                            if (nb.type === 'wire') queue.push(nk);
+                        }
+                    }
+                }
+            }
+            for (let k of poweredTiles) {
+                let b = BUILDINGS[P.map[k].id];
+                if (b.drain) gridPowerUse += b.drain;
+            }
+        }
+
+        function gameTick() {
+            updatePowerGrid();
+            let hasPower = gridPowerGen >= gridPowerUse && gridPowerGen > 0;
+
+            for (let k in P.map) {
+                let tile = P.map[k]; let b = BUILDINGS[tile.id];
+                if (b.type === 'prod') P.res[b.out] += b.outAmt;
+                if (b.type === 'factory' && poweredTiles.has(k) && hasPower && tile.recipe) {
+                    let r = RECIPES[tile.recipe];
+                    let canProduce = true;
+                    for(let req in r.in) if(P.res[req] < r.in[req]) canProduce = false;
+                    if(canProduce) {
+                        for(let req in r.in) P.res[req] -= r.in[req];
+                        for(let out in r.out) P.res[out] += r.out[out];
+                    }
+                }
+            }
+            for (let r in P.res) { rates[r] = P.res[r] - lastRes[r]; lastRes[r] = P.res[r]; }
+            
+            // 回血機制
+            if (P.hp < 100 && P.res.food > 0) { P.hp += 5; P.res.food--; if(P.hp > 100) P.hp = 100; }
+
+            updateUI(); renderSidebar();
+            localStorage.setItem('sandbox_merged_v1', JSON.stringify(P));
+        }
+
+        // === 戰鬥系統 ===
+        function spawnEnemy() {
+            if(Object.keys(P.map).length < 2) return;
+            let side = Math.floor(Math.random() * 4);
+            let ex = side === 0 ? -20 : side === 1 ? canvas.width+20 : Math.random() * canvas.width;
+            let ey = side === 2 ? -20 : side === 3 ? canvas.height+20 : Math.random() * canvas.height;
+            enemies.push({ x: ex, y: ey, hp: 60, speed: 1.2 });
+        }
+
+        function updateEntities() {
+            let hasPower = gridPowerGen >= gridPowerUse && gridPowerGen > 0;
+
+            // 塔防索敵
+            for (let k in P.map) {
+                let tile = P.map[k]; let b = BUILDINGS[tile.id];
+                if (b.type === 'turret' && (poweredTiles.has(k) || b.drain === 0) && (hasPower || b.drain === 0)) {
+                    if (frameCount - tile.lastFire >= b.cd) {
+                        let [tx, ty] = k.split(',').map(Number);
+                        let cx = tx * TILE_SIZE + TILE_SIZE/2;
+                        let cy = ty * TILE_SIZE + TILE_SIZE/2;
+                        
+                        let target = null; let minDist = b.range;
+                        for(let e of enemies) {
+                            let dist = Math.hypot(e.x - cx, e.y - cy);
+                            if(dist < minDist) { minDist = dist; target = e; }
+                        }
+
+                        if(target && P.res[b.ammoType] > 0) {
+                            P.res[b.ammoType]--;
+                            let angle = Math.atan2(target.y - cy, target.x - cx);
+                            bullets.push({ x: cx, y: cy, vx: Math.cos(angle)*12, vy: Math.sin(angle)*12, dmg: b.dmg, color: b.ammoType === 'shell' ? '#ef4444' : '#fbbf24' });
+                            tile.lastFire = frameCount;
+                        }
+                    }
+                }
+            }
+
+            // 子彈物理
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                let b = bullets[i];
+                b.x += b.vx; b.y += b.vy;
+                let hit = false;
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    let e = enemies[j];
+                    if (Math.hypot(b.x - e.x, b.y - e.y) < 18) {
+                        e.hp -= b.dmg; hit = true;
+                        if(e.hp <= 0) enemies.splice(j, 1);
+                        break;
+                    }
+                }
+                if (hit || b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) bullets.splice(i, 1);
+            }
+
+            // 敵群行為
+            let inDanger = enemies.length > 0;
+            document.getElementById('warning-overlay').className = inDanger ? 'danger' : '';
+
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                let e = enemies[i];
+                let targetX = P.px * TILE_SIZE + TILE_SIZE/2;
+                let targetY = P.py * TILE_SIZE + TILE_SIZE/2;
+                let angle = Math.atan2(targetY - e.y, targetX - e.x);
+                e.x += Math.cos(angle) * e.speed;
+                e.y += Math.sin(angle) * e.speed;
+                
+                if(Math.hypot(e.x - targetX, e.y - targetY) < 20 && frameCount % 30 === 0) { 
+                    P.hp -= 15; 
+                    if(P.hp <= 0) { alert("基地淪陷，玩家陣亡！重新整理網頁可重來。"); P.hp = 100; P.map = {}; enemies=[]; } 
+                }
+            }
+        }
+
+        // === 繪圖 ===
+        function drawMap() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = "rgba(255,255,255,0.03)";
+            for(let i=0; i<cols; i++) for(let j=0; j<rows; j++) ctx.strokeRect(i*TILE_SIZE, j*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+
+            // 繪製電線連線
+            ctx.lineWidth = 4;
+            for (let k in P.map) {
+                let [x, y] = k.split(',').map(Number);
+                if (P.map[k].id === 'wire') {
+                    ctx.strokeStyle = poweredTiles.has(k) && gridPowerGen >= gridPowerUse ? '#fbbf24' : '#475569';
+                    let dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+                    dirs.forEach(d => {
+                        let nk = `${x+d[0]},${y+d[1]}`;
+                        if(P.map[nk] && (BUILDINGS[P.map[nk].id].type === 'wire' || BUILDINGS[P.map[nk].id].type === 'gen' || BUILDINGS[P.map[nk].id].type === 'factory' || BUILDINGS[P.map[nk].id].type === 'turret')) {
+                            ctx.beginPath();
+                            ctx.moveTo(x*TILE_SIZE + TILE_SIZE/2, y*TILE_SIZE + TILE_SIZE/2);
+                            ctx.lineTo((x+d[0])*TILE_SIZE + TILE_SIZE/2, (y+d[1])*TILE_SIZE + TILE_SIZE/2);
+                            ctx.stroke();
+                        }
+                    });
+                }
+            }
+
+            // 建築實體
+            ctx.font = "24px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            for (let k in P.map) {
+                let [x, y] = k.split(',').map(Number);
+                let tile = P.map[k]; let b = BUILDINGS[tile.id];
+                
+                ctx.fillStyle = tile.id === 'wire' ? 'transparent' : "rgba(30, 41, 59, 0.9)";
+                if (tile.id !== 'wire') ctx.fillRect(x*TILE_SIZE + 2, y*TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                
+                // 停電警告 / 運作提示
+                if (b.type === 'factory' || (b.type === 'turret' && b.drain > 0)) {
+                    if (!poweredTiles.has(k) || gridPowerGen < gridPowerUse) {
+                        ctx.fillStyle = "rgba(239, 68, 68, 0.4)";
+                        ctx.fillRect(x*TILE_SIZE + 2, y*TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                    } else if (tile.recipe) {
+                        ctx.fillStyle = "rgba(16, 185, 129, 0.2)";
+                        ctx.fillRect(x*TILE_SIZE + 2, y*TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                    }
+                }
+
+                // 砲塔射程圈
+                if (b.type === 'turret') {
+                    ctx.fillStyle = "rgba(239, 68, 68, 0.1)";
+                    ctx.beginPath(); ctx.arc(x*TILE_SIZE+20, y*TILE_SIZE+20, b.range, 0, Math.PI*2); ctx.fill();
+                }
+                
+                ctx.fillText(b.icon, x*TILE_SIZE + TILE_SIZE/2, y*TILE_SIZE + TILE_SIZE/2);
+            }
+
+            // 玩家與血量
+            ctx.fillText("🧑‍🚀", P.px*TILE_SIZE + TILE_SIZE/2, P.py*TILE_SIZE + TILE_SIZE/2);
+            ctx.fillStyle = "red"; ctx.fillRect(P.px*TILE_SIZE, P.py*TILE_SIZE - 8, TILE_SIZE * (P.hp/100), 4);
+            ctx.strokeStyle = "rgba(245, 158, 11, 0.3)"; ctx.lineWidth = 2;
+            ctx.strokeRect((P.px-3)*TILE_SIZE, (P.py-3)*TILE_SIZE, TILE_SIZE*7, TILE_SIZE*7);
+
+            // 敵人
+            for (let e of enemies) {
+                ctx.fillText("👾", e.x, e.y);
+                ctx.fillStyle = "lime"; ctx.fillRect(e.x - 15, e.y - 20, 30 * (e.hp/60), 4);
+            }
+
+            // 子彈
+            for (let b of bullets) {
+                ctx.fillStyle = b.color;
+                ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill();
+            }
+        }
+
+        function gameLoop() { 
+            frameCount++; handleMovement(); updateEntities(); drawMap(); requestAnimationFrame(gameLoop); 
+        }
+
+        // === UI 邏輯 ===
+        function updateBuildBar() {
+            let buildHtml = '';
+            for(let k in BUILDINGS) {
+                let b = BUILDINGS[k];
+                let locked = b.req && !P.tech[b.req];
+                let sel = selectedTool === k ? 'selected' : '';
+                buildHtml += `<div class="build-btn ${sel} ${locked?'locked':''}" onclick="selectedTool='${k}'; updateBuildBar()">
+                    <div style="font-size:20px;">${b.icon}</div>
+                    <div style="font-size:10px;">${b.cost > 0 ? '$'+b.cost : '工具'}</div>
+                </div>`;
+            }
+            document.getElementById('buildbar').innerHTML = buildHtml;
+        }
+
+        function updateUI() {
+            document.getElementById('ui-money').innerText = Math.floor(P.money);
+            let pMeter = document.getElementById('ui-power');
+            pMeter.innerText = `${gridPowerUse} / ${gridPowerGen}`;
+            pMeter.parentElement.style.color = (gridPowerUse > gridPowerGen) ? '#ef4444' : '#fbbf24';
+
+            let html = '';
+            for(let k in RES) {
+                if (P.res[k] > 0 || rates[k] !== 0) {
+                    let r = rates[k] || 0;
+                    let rClass = r > 0 ? 'rate-pos' : (r < 0 ? 'rate-neg' : 'rate-zero');
+                    let rText = r > 0 ? `+${r.toFixed(1)}/s` : (r < 0 ? `${r.toFixed(1)}/s` : `0/s`);
+                    html += `<div class="res-pill"><span>${RES[k].icon} ${Math.floor(P.res[k])}</span><span class="${rClass}">(${rText})</span></div>`;
+                }
+            }
+            document.getElementById('ui-inventory').innerHTML = html;
+        }
+
+        // 工廠配方 UI
+        function openFactoryUI(key) {
+            currentEditingTile = key; let tile = P.map[key];
+            let ui = document.getElementById('factory-ui');
+            document.getElementById('factory-status').innerText = poweredTiles.has(key) ? (gridPowerGen >= gridPowerUse ? '🟢 電力充足' : '🔴 區域跳電中') : '⚫ 未連接電網';
+            
+            let html = '';
+            for(let r in RECIPES) {
+                let rec = RECIPES[r];
+                let inTxt = Object.entries(rec.in).map(([k,v]) => `${v}${RES[k].icon}`).join(' + ');
+                let outTxt = Object.entries(rec.out).map(([k,v]) => `${v}${RES[k].icon}`).join('');
+                let isSel = tile.recipe === r;
+                
+                html += `<div class="recipe-btn" style="${isSel ? 'border-color:#fbbf24; background:#334155;' : ''}" onclick="setRecipe('${r}')">
+                    <span>${rec.name}</span><span>${inTxt} ➡️ ${outTxt}</span>
+                </div>`;
+            }
+            html += `<div class="recipe-btn" onclick="setRecipe(null)">⏹️ 停止生產</div>`;
+            document.getElementById('recipe-list').innerHTML = html;
+            ui.style.display = 'block';
+        }
+
+        function setRecipe(r) {
+            if(currentEditingTile && P.map[currentEditingTile]) P.map[currentEditingTile].recipe = r;
+            showToast(r ? "✅ 配方已設定" : "⏹️ 工廠已停工"); closeFactoryUI();
+        }
+        function closeFactoryUI() { document.getElementById('factory-ui').style.display = 'none'; currentEditingTile = null; }
+
+        function switchPanel(id, el) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.panel-content').forEach(p => p.classList.remove('active'));
+            el.classList.add('active'); document.getElementById(`panel-${id}`).classList.add('active');
+        }
+
+        function renderSidebar() {
+            let mHtml = '<h3>📦 黑市交易</h3>';
+            for(let k in RES) {
+                let amt = Math.floor(P.res[k]);
+                if (amt > 0) mHtml += `<div class="card"><div style="display:flex; justify-content:space-between;"><span>${RES[k].icon} ${RES[k].name}: ${amt}</span><span>$${RES[k].price}/個</span></div>
+                    <button class="btn-sell" onclick="let a=Math.floor(P.res['${k}']); if(a>0){P.res['${k}']-=a; P.money+=a*${RES[k].price}; updateUI(); renderSidebar();}">出售全庫存 (+$${amt * RES[k].price})</button></div>`;
+            }
+            document.getElementById('panel-market').innerHTML = mHtml;
+
+            let tHtml = '<h3>🔬 國家科技</h3>';
+            TECHS.forEach(t => {
+                if (t.req && !P.tech[t.req]) return;
+                let done = P.tech[t.id];
+                tHtml += `<div class="card" style="border-color: ${done ? '#10b981' : '#334155'}">
+                    <div style="color:${done ? '#10b981' : 'white'}; font-weight:bold;">${t.name}</div>
+                    <div style="font-size:12px; color:#94a3b8; margin: 10px 0;">${t.desc}</div>
+                    <button ${done || P.money < t.cost ? 'disabled' : ''} onclick="if(P.money>=${t.cost}){P.money-=${t.cost}; P.tech['${t.id}']=true; showToast('解鎖：${t.name}'); updateBuildBar(); updateUI(); renderSidebar();}">${done ? '✅ 已研發' : `研發 ($${t.cost})`}</button>
+                </div>`;
+            });
+            document.getElementById('panel-tech').innerHTML = tHtml;
+        }
+
+        function showToast(msg) {
+            let t = document.getElementById('toast'); t.innerText = msg; t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 2000);
+        }
+    </script>
+</body>
+</html>
