@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>像素帝國：穩定整合版</title>
+    <style>
+        body { margin: 0; background: #0f172a; color: white; display: flex; font-family: sans-serif; }
+        #game-container { position: relative; flex-grow: 1; height: 100vh; overflow: hidden; }
+        canvas { display: block; background: #064e3b; }
+        #ui-layer { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+    <div id="ui-layer">
+        <div>資金: $<span id="ui-money">100</span></div>
+        <div>電力: <span id="ui-power">0/0</span></div>
+        <div style="font-size: 12px; margin-top: 10px;">點擊網格放置礦井 ($10)</div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const TILE = 40;
+    
+    // 遊戲狀態物件
+    let gameState = {
+        money: 100,
+        map: {}, // key: "x,y", value: {type: 'mine'}
+    };
+
+    function resize() {
+        canvas.width = document.getElementById('game-container').clientWidth;
+        canvas.height = document.getElementById('game-container').clientHeight;
+    }
+    window.onresize = resize;
+    resize();
+
+    // 核心繪製邏輯
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // 畫網格
+        ctx.strokeStyle = "rgba(255,255,255,0.1)";
+        for(let x=0; x<canvas.width; x+=TILE) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
+        for(let y=0; y<canvas.height; y+=TILE) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
+
+        // 畫建築
+        for(let key in gameState.map) {
+            let [gx, gy] = key.split(',').map(Number);
+            ctx.fillStyle = "#f59e0b";
+            ctx.font = "20px Arial";
+            ctx.fillText("⛏️", gx*TILE + 5, gy*TILE + 30);
+        }
+
+        document.getElementById('ui-money').innerText = gameState.money;
+    }
+
+    // 點擊事件 (修正版)
+    canvas.addEventListener('mousedown', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const gx = Math.floor((e.clientX - rect.left) / TILE);
+        const gy = Math.floor((e.clientY - rect.top) / TILE);
+        const key = `${gx},${gy}`;
+
+        if (!gameState.map[key] && gameState.money >= 10) {
+            gameState.map[key] = { type: 'mine' };
+            gameState.money -= 10;
+            console.log("成功放置礦井於:", key);
+        } else {
+            console.log("無法放置 (無資金或位置已佔用)");
+        }
+        draw();
+    });
+
+    // 啟動迴圈
+    function loop() {
+        draw();
+        requestAnimationFrame(loop);
+    }
+    loop();
+</script>
+</body>
+</html>
